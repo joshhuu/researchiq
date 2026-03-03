@@ -87,8 +87,17 @@ async def get_analysis(paper_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{paper_id}/analyze")
-async def run_analysis(paper_id: int, db: AsyncSession = Depends(get_db)):
-    """Run full AI analysis: summary + insights + topics + gaps. Overwrites any cached results."""
+async def run_analysis(
+    paper_id: int,
+    n_sentences: int = 3,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run full AI analysis: summary + insights + topics + gaps. Overwrites any cached results.
+    
+    Query params:
+      n_sentences (int, default 3): sentences per section in the summary (1–10).
+    """
+    n_sentences = max(1, min(10, n_sentences))  # clamp to valid range
     paper = await db.get(ResearchPaper, paper_id)
     if not paper:
         raise HTTPException(404, "Paper not found.")
@@ -98,7 +107,7 @@ async def run_analysis(paper_id: int, db: AsyncSession = Depends(get_db)):
 
     # ── 1. Summary ─────────────────────────────────────────────────────────────
     try:
-        summary_data = await generate_summary(sections)
+        summary_data = await generate_summary(sections, n_sentences_override=n_sentences)
     except Exception as e:
         raise HTTPException(500, f"Summarization failed: {e}")
 

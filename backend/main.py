@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.database import init_db
 from backend.routers import papers, summary, insights, topics, compare, export, analyze
+from backend.routers import chat, trends
 
 
 @asynccontextmanager
@@ -32,6 +33,8 @@ app.include_router(topics.router)
 app.include_router(compare.router)
 app.include_router(export.router)
 app.include_router(analyze.router)
+app.include_router(chat.router)
+app.include_router(trends.router)
 
 
 @app.get("/health")
