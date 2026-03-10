@@ -1,6 +1,6 @@
 # PaperIQ — AI Research Paper Analyzer
 
-PaperIQ is a comprehensive AI-powered research paper analysis tool built with a FastAPI backend and a Streamlit frontend. It leverages Anthropic's Claude API to automatically extract text from PDFs, detect sections, and generate deep insights, summaries, and topic classifications.
+PaperIQ is a comprehensive AI-powered research paper analysis tool built with a FastAPI backend and a Streamlit frontend. It leverages local NLP models (spaCy, scikit-learn, SentenceTransformers) for extraction, summarization, and topic classification, along with the Google Gemini API for conversational Q&A over paper content.
 
 ## 🌟 Features
 
@@ -15,7 +15,7 @@ PaperIQ is a comprehensive AI-powered research paper analysis tool built with a 
 
 * **Backend**: FastAPI, Uvicorn, Python
 * **Database**: SQLite (dev) with SQLAlchemy ORM and Alembic for migrations
-* **AI Engine**: Anthropic Claude API (specifically `claude-3-5-sonnet-20241022` or equivalent)
+* **AI Engine**: Local NLP models (`spaCy`, `scikit-learn`, `SentenceTransformers`) for core processing, and Google Gemini API (`gemma-3-27b-it`) for conversational Q&A.
 * **PDF Processing**: `pdfplumber` for text extraction and section detection
 * **Frontend**: Streamlit, with `wordcloud`, `matplotlib`, and `pandas` for visualization
 * **Exporting**: `reportlab` (PDF) and `pandas` (CSV)
@@ -23,7 +23,7 @@ PaperIQ is a comprehensive AI-powered research paper analysis tool built with a 
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
-Ensure you have Python 3.9+ installed. You will also need an Anthropic API key.
+Ensure you have Python 3.9+ installed. You will also need a Google Gemini API key for the chat feature.
 
 ### 2. Setup
 
@@ -40,9 +40,9 @@ cp .env.example .env
 ```
 Open `.env` and configure your keys, specifically:
 ```env
-ANTHROPIC_API_KEY=your-api-key-here
+GEMINI_API_KEY=your-api-key-here
 DATABASE_URL=sqlite:///./paperiq.db
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
+GEMINI_MODEL=gemma-3-27b-it
 ```
 
 ### 4. Running the Application
