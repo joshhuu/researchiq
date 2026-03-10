@@ -1,62 +1,106 @@
 """
 trend_analyzer.py
-Compares multiple papers to identify trends, gaps, and similarities.
+Cross-paper trend analysis using sentence-transformer embeddings + TF-IDF.
+
+Identifies common themes, diverging focuses, and trending keywords across a
+set of research papers without calling any external API.
 """
-import json
-from google import genai
 from typing import List, Dict
-from backend.config import settings
+
+import numpy as np
+from sentence_transformers import SentenceTransformer, util
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Lazy singleton
+_model = None
 
 
-_client = genai.Client(api_key=settings.gemini_api_key)
-
-
-COMPARE_PROMPT = """You are a senior research analyst conducting a literature review.
-You have been given summaries and key insights from {n} research papers.
-
-{papers_text}
-
-Analyze these papers together and respond ONLY with a valid JSON object (no markdown, no preamble):
-{{
-  "trends": [
-    "Common trend or theme observed across papers (list 3–5 items)"
-  ],
-  "gaps": [
-    "Research gap or open problem identified (list 3–5 items)"
-  ],
-  "similarities": [
-    "Key similarity between papers (list 3–5 items)"
-  ],
-  "differences": [
-    "Key difference in approach or scope (list 2–4 items)"
-  ]
-}}"""
+def _get_model() -> SentenceTransformer:
+    global _model
+    if _model is None:
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _model
 
 
 def analyze_trends(papers: List[Dict]) -> Dict:
     """
-    papers: list of dicts with keys: title, full_summary, keywords (list of strings)
-    Returns dict with trends, gaps, similarities, differences.
+    Analyse trends across multiple papers.
+
+    Args:
+        papers: list of dicts with keys:
+            - title        (str)
+            - full_summary (str)
+            - keywords     (list[str], optional)
+
+    Returns:
+        dict with keys: trends, gaps, similarities, differences
     """
-    papers_text_parts = []
-    for i, paper in enumerate(papers, 1):
-        keywords_str = ", ".join(paper.get("keywords", [])[:15])
-        papers_text_parts.append(
-            f"PAPER {i}: {paper.get('title', 'Unknown')}\n"
-            f"Summary: {paper.get('full_summary', '')[:1000]}\n"
-            f"Key terms: {keywords_str}"
-        )
+    if not papers:
+        return {"trends": [], "gaps": [], "similarities": [], "differences": []}
 
-    papers_text = "\n\n---\n\n".join(papers_text_parts)
-    prompt = COMPARE_PROMPT.format(n=len(papers), papers_text=papers_text[:10000])
+    model = _get_model()
 
-    response = _client.models.generate_content(model=settings.gemini_model, contents=prompt)
-    raw = response.text.strip()
+    # Build text representations
+    texts = []
+    for p in papers:
+        kws = ", ".join(p.get("keywords", [])[:15])
+        texts.append(f"{p.get('title', '')}. {p.get('full_summary', '')} {kws}")
 
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
+    n = len(texts)
+    embs = model.encode(texts, convert_to_tensor=True)
+    sim_matrix = util.cos_sim(embs, embs).cpu().numpy()
 
-    return json.loads(raw)
+    # ── TF-IDF ─────────────────────────────────────────────────────────────────
+    trends:      List[str] = []
+    gaps:        List[str] = []
+    differences: List[str] = []
+
+    try:
+        vec   = TfidfVectorizer(stop_words="english", max_features=300, ngram_range=(1, 2))
+        tfidf = vec.fit_transform(texts).toarray()
+        names = vec.get_feature_names_out()
+
+        avg = tfidf.mean(axis=0)
+        var = tfidf.var(axis=0)
+
+        # Trends = highest average TF-IDF (common across papers)
+        top_avg = np.argsort(avg)[::-1][:6]
+        trends = [f"Recurring theme across papers: '{names[i]}'" for i in top_avg if avg[i] > 0][:5]
+
+        # Differences = highest variance (exclusive to one paper)
+        top_var = np.argsort(var)[::-1][:6]
+        differences = [f"Paper-specific focus: '{names[i]}'" for i in top_var][:4]
+
+        # Gap proxy: terms that appear in only one paper and are semantically unique
+        paper_term_counts = (tfidf > 0).sum(axis=0)
+        unique_idx = np.where(paper_term_counts == 1)[0]
+        unique_terms = [names[i] for i in unique_idx if avg[i] > 0.02][:5]
+        gaps = [
+            f"Topic '{t}' is addressed by only one paper — potential gap in collective coverage."
+            for t in unique_terms
+        ]
+
+    except Exception:
+        pass
+
+    # ── Similarities ───────────────────────────────────────────────────────────
+    similarities: List[str] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            score = float(sim_matrix[i][j])
+            if score > 0.50:
+                t1 = papers[i].get("title", f"Paper {i + 1}")
+                t2 = papers[j].get("title", f"Paper {j + 1}")
+                similarities.append(
+                    f'"{t1}" and "{t2}" share strong thematic overlap ({score:.0%} similarity).'
+                )
+
+    if not similarities:
+        similarities = ["No strongly similar paper pairs found among the selected set."]
+
+    return {
+        "trends":      trends      or ["No strong recurring themes detected."],
+        "gaps":        gaps        or ["No obvious coverage gaps detected."],
+        "similarities": similarities,
+        "differences": differences or ["Papers address clearly distinct sub-domains."],
+    }

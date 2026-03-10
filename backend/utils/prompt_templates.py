@@ -1,4 +1,38 @@
-"""All Gemini prompt templates centralized here."""
+"""
+utils/prompt_templates.py
+
+This module has been converted from LLM prompt templates to plain NLP helpers.
+All AI analysis is now performed by:
+  • summarizer.py      — spaCy sentence tokenisation + TF-IDF extractive summarisation
+  • insight_extractor.py — KeyBERT + YAKE + spaCy NER
+  • topic_classifier.py  — sentence-transformers cosine similarity against domain descriptors
+  • gap_detector.py      — spaCy sentence detection + sentence-transformers semantic matching
+  • trend_analyzer.py    — sentence-transformers + TF-IDF cross-paper analysis
+
+Keeping this file present for import-compatibility; helpers below are utility
+functions used by tests or external callers.
+"""
+from typing import Dict, List
+
+
+def format_sections_for_display(sections: Dict[str, str]) -> str:
+    """Render a sections dict as a human-readable block of text."""
+    return "\n\n".join(
+        f"=== {k.upper()} ===\n{v[:2000]}"
+        for k, v in sections.items()
+        if v
+    )
+
+
+def truncate_text(text: str, max_chars: int = 6000) -> str:
+    """Safely truncate text to a maximum character count."""
+    return text[:max_chars] if text else ""
+
+
+def build_paper_context(title: str, abstract: str, keywords: List[str]) -> str:
+    """Build a compact paper context string for downstream processing."""
+    kw_str = ", ".join(keywords[:20]) if keywords else ""
+    return f"TITLE: {title}\nABSTRACT: {abstract[:1500]}\nKEYWORDS: {kw_str}"
 
 
 def summarize_paper_prompt(sections: dict) -> str:

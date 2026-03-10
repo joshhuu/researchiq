@@ -37,7 +37,7 @@ async def get_summary(paper_id: int, db: AsyncSession = Depends(get_db)):
     # Generate fresh
     sections = json.loads(paper.sections or "{}")
     try:
-        result_data = await generate_summary(sections)
+        result_data = await generate_summary(sections, n_sentences_override=None)
     except Exception as e:
         raise HTTPException(500, f"Summarization failed: {str(e)}")
 
