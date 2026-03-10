@@ -3,7 +3,7 @@
 ## Overview
 
 PaperIQ is a FastAPI backend with a Streamlit frontend (upgradeable to React).
-All AI analysis is powered by the Claude API (Anthropic).
+All AI analysis is powered by local NLP models (`spaCy`, `SentenceTransformers`, etc.) running offline, and conversational Q&A is powered by the Gemini API.
 
 ---
 
@@ -24,10 +24,11 @@ paperiq/
 │   │
 │   ├── services/                   # Business logic (pure Python, no FastAPI)
 │   │   ├── pdf_parser.py           # PDF text extraction & section detection
-│   │   ├── summarizer.py           # Claude API: summarization
-│   │   ├── insight_extractor.py    # Claude API: keyword & insight extraction
-│   │   ├── topic_classifier.py     # Claude API: domain classification
-│   │   └── trend_analyzer.py       # Claude API: cross-paper trend analysis
+│   │   ├── summarizer.py           # Local NLP: extractive summarization using spaCy & TF-IDF
+│   │   ├── insight_extractor.py    # Local NLP: keyword & insight extraction using KeyBERT & spaCy
+│   │   ├── topic_classifier.py     # Local NLP: Zero-shot topic classification using SentenceTransformers
+│   │   ├── trend_analyzer.py       # Local NLP: cross-paper trend analysis using Embeddings & TF-IDF
+│   │   └── chat_service.py         # Gemini API: RAG-based conversational Q&A
 │   │
 │   ├── models/                     # SQLAlchemy ORM models
 │   │   ├── paper.py                # ResearchPaper table
@@ -91,9 +92,9 @@ User (Streamlit UI)
         ▼
 [POST /analysis/{paper_id}]  ←── FastAPI Router (analysis.py)
         │
-        ├──► summarizer.py       → Claude API → summaries table
-        ├──► insight_extractor.py → Claude API → insights table
-        └──► topic_classifier.py  → Claude API → topics table
+        ├──► summarizer.py       → Local NLP → summaries table
+        ├──► insight_extractor.py → Local NLP → insights table
+        └──► topic_classifier.py  → Local NLP → topics table
         │
         │  7. Return combined AnalysisResult to frontend
         ▼
@@ -110,7 +111,7 @@ User (Streamlit UI)
         ▼
 [POST /analysis/compare]
         │
-        └──► trend_analyzer.py  → Claude API → gaps, trends, similarities
+        └──► trend_analyzer.py  → Local NLP → gaps, trends, similarities
         │
         │  9. (Optional) Export
         ▼
@@ -214,16 +215,17 @@ CREATE TABLE comparisons (
 
 ---
 
-## Claude API Usage Per Service
+## Processing Pipeline
 
-| Service               | Prompt Goal                                              | Output Format     |
-|-----------------------|----------------------------------------------------------|-------------------|
-| `summarizer.py`       | Summarize each section + produce 1 overall summary       | JSON              |
-| `insight_extractor.py`| Extract keywords, methodologies, findings, tools used    | JSON array        |
-| `topic_classifier.py` | Classify into domain/sub-domain with confidence scores   | JSON              |
-| `trend_analyzer.py`   | Given N paper summaries, identify gaps/trends/overlaps   | JSON              |
+| Service               | Mechanism                                                               | Output Format     |
+|-----------------------|-------------------------------------------------------------------------|-------------------|
+| `summarizer.py`       | Extractive summarization using spaCy sentence tokenization & TF-IDF     | Dict / DB Record  |
+| `insight_extractor.py`| KeyBERT, yake, and spaCy NER for keyword extraction                     | Dict List         |
+| `topic_classifier.py` | SentenceTransformer cosine similarity against predefined domains        | Dict List         |
+| `trend_analyzer.py`   | Embeddings + TF-IDF cross-paper trend detection                         | Dict              |
+| `chat_service.py`     | RAG over paper chunks with Google Gemini API (`gemma-3-27b-it`)         | Dict              |
 
-All Claude calls return **structured JSON** parsed server-side before DB storage.
+All core pipeline steps run offline via local NLP models. Only the advanced chat service uses an external API (Gemini).
 
 ---
 
@@ -236,22 +238,22 @@ All Claude calls return **structured JSON** parsed server-side before DB storage
 - [ ] Streamlit: Upload page
 
 ### Week 3–4: AI Summarization
-- [ ] `summarizer.py` with Claude API
-- [ ] `POST /analysis/{id}/summary` endpoint
-- [ ] Streamlit: Summary view page
+- [x] `summarizer.py` implementation with local NLP
+- [x] `POST /analysis/{id}/summary` endpoint
+- [x] Streamlit: Summary view page
 
 ### Week 5–6: Insights & Classification
-- [ ] `insight_extractor.py` with Claude API
-- [ ] `topic_classifier.py` with Claude API
+- [x] `insight_extractor.py` with local NLP
+- [x] `topic_classifier.py` with local NLP
 - [ ] Full `POST /analysis/{id}` endpoint
 - [ ] Streamlit: Insights + keyword cloud + topic tags
 
 ### Week 7–8: Compare, Export & Polish
-- [ ] `trend_analyzer.py` for multi-paper comparison
-- [ ] `POST /analysis/compare` endpoint
-- [ ] Export endpoints (PDF/CSV)
-- [ ] Streamlit: Compare & Export pages
-- [ ] End-to-end testing
+- [x] `trend_analyzer.py` for multi-paper comparison
+- [x] `POST /analysis/compare` endpoint
+- [x] Export endpoints (PDF/CSV)
+- [x] Streamlit: Compare & Export pages
+- [x] `chat_service.py` with Gemini integration
 
 ---
 
@@ -262,7 +264,12 @@ All Claude calls return **structured JSON** parsed server-side before DB storage
 fastapi
 uvicorn
 pdfplumber          # PDF text extraction
-anthropic           # Claude API
+spacy               # Local NLP
+scikit-learn        # Local NLP (TF-IDF)
+sentence-transformers # Vector embeddings
+keybert             # Keyword extraction
+yake                # Keyword extraction
+google-genai        # Gemini API
 sqlalchemy          # ORM
 alembic             # DB migrations
 python-multipart    # File uploads
@@ -285,10 +292,10 @@ pandas              # Data tables
 ## Environment Variables (.env)
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=...
 DATABASE_URL=sqlite:///./paperiq.db
 UPLOAD_DIR=./uploads
 EXPORT_DIR=./exports
 MAX_FILE_SIZE_MB=20
-CLAUDE_MODEL=claude-sonnet-4-20250514
+GEMINI_MODEL=gemma-3-27b-it
 ```
